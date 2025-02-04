@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Chat</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            display: flex; 
+            height: 100vh; 
+            margin: 0; 
+            background-color: #282c34; 
+            color: #abb2bf; 
+        }
+        #sidebar { 
+            width: 200px; 
+            background-color: #21252b; 
+            padding: 10px; 
+            box-sizing: border-box; 
+            border-right: 1px solid #3e4451; 
+        }
+        #sidebar h3 { 
+            color: #98c379; 
+        }
+        #sidebar ul { 
+            list-style-type: none; 
+            padding: 0; 
+        }
+        #sidebar li { 
+            margin: 5px 0; 
+            cursor: pointer; 
+        }
+        #sidebar li:hover { 
+            color: #61afef; 
+        }
+        #chat-container { 
+            flex: 1; 
+            display: flex; 
+            flex-direction: column; 
+            padding: 20px; 
+        }
+        #messages { 
+            flex: 1; 
+            overflow-y: auto; 
+            border: 1px solid #3e4451; 
+            padding: 10px; 
+            margin-bottom: 10px; 
+            white-space: pre-wrap; 
+            background-color: #21252b; 
+            color: #abb2bf; 
+            box-sizing: border-box; /* Include padding and border in the element's total width and height */
+        }
+        .message { 
+            margin: 10px 0; 
+        }
+        .user { 
+            text-align: right; 
+            color: #98c379; 
+        }
+        .ollama { 
+            text-align: left; 
+            color: #ffffff; /* Change response text color to white */
+        }
+        .think { 
+            color: #61afef; 
+            font-size: 0.8em; 
+        }
+        .code-block { 
+            background-color: #1e1e1e; 
+            border: 1px solid #3e4451; 
+            padding: 10px; 
+            margin: 10px 0; 
+            white-space: pre; 
+            overflow-x: auto; 
+            font-family: 'Courier New', Courier, monospace; 
+            color: #dcdcdc; 
+        }
+        textarea { 
+            width: 100%; 
+            height: 100px; 
+            background-color: #3e4451; 
+            color: #abb2bf; 
+            border: 1px solid #555; 
+            resize: none; /* Prevent resizing */
+            box-sizing: border-box; /* Include padding and border in the element's total width and height */
+        }
+        button { 
+            margin-top: 10px; 
+            padding: 10px; 
+            font-size: 16px; 
+            background-color: #98c379; 
+            color: #282c34; 
+            border: none; 
+            cursor: pointer; 
+        }
+        button:hover { 
+            background-color: #8ab367; 
+        }
+        form { 
+            display: flex; 
+            flex-direction: column; 
+        }
+    </style>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <div id="sidebar">
+        <h3>Chat Histories</h3>
+        <ul id="chat-history-list"></ul>
+    </div>
+    <div id="chat-container">
+        <h2>Your friendly neighborhood LLM</h2>
+        <div id="messages"></div>
+        <form id="chat-form">
+            <textarea id="prompt" name="prompt" rows="4" cols="50" placeholder="Type your message here..."></textarea><br>
+            <button type="submit">Send</button>
+        </form>
+        <button id="resetBtn" class="btn btn-warning">Reset Chat History</button>
+        <button id="shutdownBtn" class="btn btn-danger">Shutdown Server</button>
+    </div>
+
+    <script>
+        document.getElementById('shutdownBtn').addEventListener('click', async () => {
+            if (confirm('Are you sure you want to shutdown the server?')) {
+                try {
+                    await fetch('/shutdown/', {
+                        method: 'POST'
+                    });
+                    alert('Server is shutting down...');
+                    window.close(); // Close the browser window
+                } catch (error) {
+                    console.error('Error shutting down server:', error);
+                    alert('Failed to shutdown server');
+                }
+            }
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', async () => {
+            if (confirm('Are you sure you want to reset the chat history?')) {
+                try {
+                    await fetch('/reset/', {
+                        method: 'POST'
+                    });
+                    alert('Chat history has been reset.');
+                    document.getElementById('messages').innerHTML = '';
+                } catch (error) {
+                    console.error('Error resetting chat history:', error);
+                    alert('Failed to reset chat history');
+                }
+            }
+        });
+
+        document.getElementById('chat-form').onsubmit = async function(event) {
+            event.preventDefault();
+            submitForm();
+        };
+
+        document.getElementById('prompt').addEventListener('keydown', function(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                submitForm();
+            }
+        });
+
+        async function submitForm() {
+            const prompt = document.getElementById('prompt').value;
+            const messagesDiv = document.getElementById('messages');
+            const userMessageDiv = document.createElement('div');
+            userMessageDiv.className = 'message user';
+            userMessageDiv.textContent = prompt;
+            messagesDiv.appendChild(userMessageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            const responseDiv = document.createElement('div');
+            responseDiv.className = 'message ollama';
+            responseDiv.innerHTML = 'Loading...';
+            messagesDiv.appendChild(responseDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            const response = await fetch('/query/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ prompt: prompt })
+            });
+            const data = await response.json();
+            responseDiv.innerHTML = formatResponse(data.response);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            // Render MathJax
+            MathJax.typesetPromise([responseDiv]).catch((err) => console.log(err));
+
+            document.getElementById('prompt').value = '';
+        }
+
+        function formatResponse(response) {
+            return response
+                .replace(/\\n/g, '\n')
+                .replace(/\\t/g, '\t')
+                .replace(/<think>/g, '<think class="think">')
+                .replace(/<\/think>/g, '</think>')
+                .replace(/```([^`]+)```/g, '<div class="code-block">$1</div>');
+        }
+
+        async function loadChatHistory() {
+            const response = await fetch('/history/');
+            const data = await response.json();
+            const messagesDiv = document.getElementById('messages');
+            data.history.forEach(entry => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${entry.role}`;
+                messageDiv.innerHTML = formatResponse(entry.content);
+                messagesDiv.appendChild(messageDiv);
+            });
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        window.onload = loadChatHistory;
+    </script>
+</body>
+</html>
