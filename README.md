@@ -1,1 +1,1 @@
-See Local_LLMs.ipynb
+For information on how to run the code, see Local_LLMs.ipynb
