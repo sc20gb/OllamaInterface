@@ -35,7 +35,7 @@ def start_ollama():
 def init_ollama():
     if not is_ollama_running():
         if not start_ollama():
-            raise SystemExit("Could not start Ollama server")
+            os.system("ollama serve deepseek-R1 &")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -58,6 +58,22 @@ async def get_chat_interface():
 # Store chat history
 chat_history = []
 
+def save_chat_history():
+    """
+    Save chat history to a file.
+    """
+    with open("chat_history.json", "w") as file:
+        json.dump(chat_history, file)
+
+def load_chat_history():
+    """
+    Load chat history from a file.
+    """
+    global chat_history
+    if os.path.exists("chat_history.json"):
+        with open("chat_history.json", "r") as file:
+            chat_history = json.load(file)
+
 @app.get("/history/")
 async def get_chat_history():
     """
@@ -74,6 +90,7 @@ async def reset_chat_history():
     """
     global chat_history
     chat_history = []
+    save_chat_history()
     logger.info("Chat history reset")
     return {"message": "Chat history reset"}
 
@@ -109,6 +126,9 @@ async def query_model(request: QueryRequest):
         # Add the model's response to the chat history
         chat_history.append({"role": "ollama", "content": full_response})
         
+        # Save chat history to file
+        save_chat_history()
+        
         logger.info(f"Full response from Ollama: {full_response}")
         return {"response": full_response}
     except Exception as e:
@@ -125,5 +145,6 @@ async def shutdown():
     return {"message": "Server shutting down..."}
 
 if __name__ == "__main__":
+    load_chat_history()
     init_ollama()
     uvicorn.run(app, host="0.0.0.0", port=8000)
