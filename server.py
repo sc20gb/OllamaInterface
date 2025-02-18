@@ -35,7 +35,7 @@ def start_ollama():
 def init_ollama():
     if not is_ollama_running():
         if not start_ollama():
-            raise SystemExit("Could not start Ollama server")
+            os.system("ollama serve deepseek-R1 &")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
