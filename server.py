@@ -9,6 +9,7 @@ import os
 import signal
 import logging
 import json
+import uuid
 
 OLLAMA_SERVER_URL = "http://localhost:11434"
 
@@ -47,6 +48,14 @@ app = FastAPI()
 class QueryRequest(BaseModel):
     prompt: str
 
+class ChatSummary(BaseModel):
+    id: str
+    name: str
+
+class ChatHistory(BaseModel):
+    id: str
+    history: list
+
 @app.get("/", response_class=HTMLResponse)
 async def get_chat_interface():
     """
@@ -56,57 +65,74 @@ async def get_chat_interface():
     return FileResponse("index.html")
 
 # Store chat history
-chat_history = []
+chat_histories = {}
+index_file = "chats/index.json"
 
-def save_chat_history():
+def save_chat_history(chat_id):
     """
     Save chat history to a file.
     """
-    with open("chat_history.json", "w") as file:
-        json.dump(chat_history, file)
+    with open(f"chats/{chat_id}.json", "w") as file:
+        json.dump(chat_histories[chat_id], file)
 
-def load_chat_history():
+def load_chat_history(chat_id):
     """
     Load chat history from a file.
     """
-    global chat_history
-    if os.path.exists("chat_history.json"):
-        with open("chat_history.json", "r") as file:
-            chat_history = json.load(file)
+    if os.path.exists(f"chats/{chat_id}.json"):
+        with open(f"chats/{chat_id}.json", "r") as file:
+            chat_histories[chat_id] = json.load(file)
+    else:
+        chat_histories[chat_id] = []
 
-@app.get("/history/")
-async def get_chat_history():
+def save_index():
     """
-    Get the chat history.
+    Save the index file.
     """
-    logger.info("Retrieving chat history")
-    logger.info(f"Chat history: {chat_history}")
-    return {"history": chat_history}
+    with open(index_file, "w") as file:
+        json.dump([{"id": chat_id, "name": chat["name"]} for chat_id, chat in chat_histories.items()], file)
 
-@app.post("/reset/")
-async def reset_chat_history():
+def load_index():
     """
-    Reset the chat history.
+    Load the index file.
     """
-    global chat_history
-    chat_history = []
-    save_chat_history()
-    logger.info("Chat history reset")
-    return {"message": "Chat history reset"}
+    if os.path.exists(index_file):
+        with open(index_file, "r") as file:
+            index = json.load(file)
+            for chat in index:
+                load_chat_history(chat["id"])
 
-@app.post("/query/")
-async def query_model(request: QueryRequest):
+@app.get("/history/{chat_id}")
+async def get_chat_history(chat_id: str):
     """
-    Send a query to the Ollama model and return the response.
+    Get the chat history for a specific chat.
+    """
+    logger.info(f"Retrieving chat history for chat {chat_id}")
+    return {"history": chat_histories.get(chat_id, [])}
+
+@app.post("/reset/{chat_id}")
+async def reset_chat_history(chat_id: str):
+    """
+    Reset the chat history for a specific chat.
+    """
+    chat_histories[chat_id] = []
+    save_chat_history(chat_id)
+    logger.info(f"Chat history reset for chat {chat_id}")
+    return {"message": f"Chat history reset for chat {chat_id}"}
+
+@app.post("/query/{chat_id}")
+async def query_model(chat_id: str, request: QueryRequest):
+    """
+    Send a query to the Ollama model and return the response for a specific chat.
     """
     model_name = "deepseek-r1:latest"  # Replace with the correct model name
     logger.info(f"Received query: {request.prompt}")
     try:
         # Add the user's prompt to the chat history
-        chat_history.append({"role": "user", "content": request.prompt})
+        chat_histories[chat_id].append({"role": "user", "content": request.prompt})
         
         # Create the full prompt with chat history
-        full_prompt = "\n".join([f"{entry['role']}: {entry['content']}" for entry in chat_history])
+        full_prompt = "\n".join([f"{entry['role']}: {entry['content']}" for entry in chat_histories[chat_id]])
         
         response = requests.post(f"{OLLAMA_SERVER_URL}/api/generate", json={
             "model": model_name,
@@ -125,9 +151,9 @@ async def query_model(request: QueryRequest):
                     if part_json.get("done", False):
                         break
             # Add the model's response to the chat history
-            chat_history.append({"role": "ollama", "content": full_response})
+            chat_histories[chat_id].append({"role": "ollama", "content": full_response})
             # Save chat history to file
-            save_chat_history()
+            save_chat_history(chat_id)
             logger.info(f"Full response from Ollama: {full_response}")
 
         return StreamingResponse(response_generator(), media_type="text/plain")
@@ -144,7 +170,54 @@ async def shutdown():
     os.kill(os.getpid(), signal.SIGTERM)
     return {"message": "Server shutting down..."}
 
+@app.get("/chats/")
+async def get_chats():
+    """
+    Get the list of chat summaries.
+    """
+    logger.info("Retrieving chat summaries")
+    return {"chats": [{"id": chat_id, "name": chat["name"]} for chat_id, chat in chat_histories.items()]}
+
+@app.post("/chats/")
+async def create_chat():
+    """
+    Create a new chat.
+    """
+    chat_id = str(uuid.uuid4())
+    chat_histories[chat_id] = {"name": f"Chat {len(chat_histories) + 1}", "history": []}
+    save_chat_history(chat_id)
+    save_index()
+    logger.info(f"Created new chat with id {chat_id}")
+    return {"id": chat_id, "name": chat_histories[chat_id]["name"]}
+
+@app.put("/chats/{chat_id}")
+async def update_chat(chat_id: str, summary: ChatSummary):
+    """
+    Update the name of a chat.
+    """
+    if chat_id in chat_histories:
+        chat_histories[chat_id]["name"] = summary.name
+        save_index()
+        logger.info(f"Updated chat {chat_id} name to {summary.name}")
+        return {"message": f"Chat {chat_id} updated"}
+    else:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+@app.delete("/chats/{chat_id}")
+async def delete_chat(chat_id: str):
+    """
+    Delete a chat.
+    """
+    if chat_id in chat_histories:
+        del chat_histories[chat_id]
+        os.remove(f"chats/{chat_id}.json")
+        save_index()
+        logger.info(f"Deleted chat {chat_id}")
+        return {"message": f"Chat {chat_id} deleted"}
+    else:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
 if __name__ == "__main__":
-    load_chat_history()
+    load_index()
     init_ollama()
     uvicorn.run(app, host="0.0.0.0", port=8000)

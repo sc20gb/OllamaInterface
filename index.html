@@ -109,6 +109,7 @@
     <div id="sidebar">
         <h3>Chat Histories</h3>
         <ul id="chat-history-list"></ul>
+        <button id="newChatBtn">New Chat</button>
     </div>
     <div id="chat-container">
         <h2>Your friendly neighborhood LLM</h2>
@@ -227,7 +228,47 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        window.onload = loadChatHistory;
+        async function loadChatHistories() {
+            const response = await fetch('/chats/');
+            const data = await response.json();
+            const chatHistoryList = document.getElementById('chat-history-list');
+            chatHistoryList.innerHTML = '';
+            data.chats.forEach(chat => {
+                const chatItem = document.createElement('li');
+                chatItem.textContent = chat.name;
+                chatItem.dataset.chatId = chat.id;
+                chatItem.addEventListener('click', () => loadChatHistory(chat.id));
+                chatHistoryList.appendChild(chatItem);
+            });
+        }
+
+        document.getElementById('newChatBtn').addEventListener('click', async () => {
+            const response = await fetch('/chats/', {
+                method: 'POST'
+            });
+            const newChat = await response.json();
+            loadChatHistories();
+            loadChatHistory(newChat.id);
+        });
+
+        async function loadChatHistory(chatId) {
+            const response = await fetch(`/chats/${chatId}/`);
+            const data = await response.json();
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = '';
+            data.history.forEach(entry => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${entry.role}`;
+                messageDiv.innerHTML = formatResponse(entry.content);
+                messagesDiv.appendChild(messageDiv);
+            });
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        window.onload = () => {
+            loadChatHistories();
+            loadChatHistory();
+        };
     </script>
 </body>
 </html>
