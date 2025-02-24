@@ -47,9 +47,6 @@ app = FastAPI()
 class QueryRequest(BaseModel):
     prompt: str
 
-class RenameRequest(BaseModel):
-    summary: str
-
 @app.get("/", response_class=HTMLResponse)
 async def get_chat_interface():
     """
@@ -77,22 +74,6 @@ def load_chat_history():
         with open("chat_history.json", "r") as file:
             chat_history = json.load(file)
 
-def save_chat_index(index):
-    """
-    Save chat index to a file.
-    """
-    with open("chats/index.json", "w") as file:
-        json.dump(index, file)
-
-def load_chat_index():
-    """
-    Load chat index from a file.
-    """
-    if os.path.exists("chats/index.json"):
-        with open("chats/index.json", "r") as file:
-            return json.load(file)
-    return {}
-
 @app.get("/history/")
 async def get_chat_history():
     """
@@ -111,55 +92,7 @@ async def reset_chat_history():
     chat_history = []
     save_chat_history()
     logger.info("Chat history reset")
-    # Clear all chat history files
-    for file in os.listdir("chats"):
-        if file.endswith(".json") and file != "index.json":
-            os.remove(os.path.join("chats", file))
     return {"message": "Chat history reset"}
-
-@app.get("/chats/index.json", response_class=FileResponse)
-async def get_chat_index():
-    """
-    Serve the chat index file.
-    """
-    return FileResponse("chats/index.json")
-
-@app.get("/chats/{chat_id}.json", response_class=FileResponse)
-async def get_chat_history_by_id(chat_id: int):
-    """
-    Serve individual chat history files.
-    """
-    file_path = f"chats/{chat_id}.json"
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Chat history not found")
-    return FileResponse(file_path)
-
-@app.post("/chats/{chat_id}/rename")
-async def rename_chat_history(chat_id: int, request: RenameRequest):
-    """
-    Rename a chat history.
-    """
-    index = load_chat_index()
-    if str(chat_id) not in index:
-        raise HTTPException(status_code=404, detail="Chat history not found")
-    index[str(chat_id)] = request.summary
-    save_chat_index(index)
-    return {"message": "Chat history renamed"}
-
-@app.delete("/chats/{chat_id}/delete")
-async def delete_chat_history(chat_id: int):
-    """
-    Delete a chat history.
-    """
-    index = load_chat_index()
-    if str(chat_id) not in index:
-        raise HTTPException(status_code=404, detail="Chat history not found")
-    del index[str(chat_id)]
-    save_chat_index(index)
-    file_path = f"chats/{chat_id}.json"
-    if os.path.exists(file_path):
-        os.remove(file_path)
-    return {"message": "Chat history deleted"}
 
 @app.post("/query/")
 async def query_model(request: QueryRequest):
@@ -210,6 +143,87 @@ async def shutdown():
     logger.info("Server is shutting down...")
     os.kill(os.getpid(), signal.SIGTERM)
     return {"message": "Server shutting down..."}
+
+@app.get("/chats/index.json", response_class=FileResponse)
+async def get_chat_index():
+    """
+    Serve the chats/index.json file.
+    """
+    logger.info("Serving chats/index.json file")
+    if not os.path.exists("chats/index.json"):
+        with open("chats/index.json", "w") as file:
+            json.dump({}, file)
+    return FileResponse("chats/index.json")
+
+@app.get("/chats/{chat_id}.json", response_class=FileResponse)
+async def get_chat_history_file(chat_id: int):
+    """
+    Serve individual chat history files.
+    """
+    logger.info(f"Serving chat history file for chat ID: {chat_id}")
+    chat_file = f"chats/{chat_id}.json"
+    if not os.path.exists(chat_file):
+        raise HTTPException(status_code=404, detail="Chat history file not found")
+    return FileResponse(chat_file)
+
+@app.put("/chats/{chat_id}/rename/")
+async def rename_chat_history(chat_id: int, new_summary: str):
+    """
+    Rename chat history files.
+    """
+    logger.info(f"Renaming chat history file for chat ID: {chat_id} to {new_summary}")
+    index_file = "chats/index.json"
+    if not os.path.exists(index_file):
+        raise HTTPException(status_code=404, detail="Index file not found")
+    with open(index_file, "r") as file:
+        index_data = json.load(file)
+    if str(chat_id) not in index_data:
+        raise HTTPException(status_code=404, detail="Chat ID not found in index")
+    index_data[str(chat_id)] = new_summary
+    with open(index_file, "w") as file:
+        json.dump(index_data, file)
+    return {"message": "Chat history renamed"}
+
+@app.delete("/chats/{chat_id}/delete/")
+async def delete_chat_history(chat_id: int):
+    """
+    Delete chat history files.
+    """
+    logger.info(f"Deleting chat history file for chat ID: {chat_id}")
+    chat_file = f"chats/{chat_id}.json"
+    index_file = "chats/index.json"
+    if not os.path.exists(chat_file):
+        raise HTTPException(status_code=404, detail="Chat history file not found")
+    os.remove(chat_file)
+    if os.path.exists(index_file):
+        with open(index_file, "r") as file:
+            index_data = json.load(file)
+        if str(chat_id) in index_data:
+            del index_data[str(chat_id)]
+            with open(index_file, "w") as file:
+                json.dump(index_data, file)
+    return {"message": "Chat history deleted"}
+
+@app.post("/reset/")
+async def reset_chat_history():
+    """
+    Reset the chat history.
+    """
+    global chat_history
+    chat_history = []
+    save_chat_history()
+    logger.info("Chat history reset")
+    # Clear all chat history files
+    chats_folder = "chats"
+    if os.path.exists(chats_folder):
+        for file_name in os.listdir(chats_folder):
+            file_path = os.path.join(chats_folder, file_name)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+    # Recreate index.json file
+    with open("chats/index.json", "w") as file:
+        json.dump({}, file)
+    return {"message": "Chat history reset"}
 
 if __name__ == "__main__":
     load_chat_history()
