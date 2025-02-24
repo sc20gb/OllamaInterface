@@ -1,51 +1,19 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
-from pydantic import BaseModel
-import subprocess
-import requests
-import time
+from backend.models import QueryRequest
+from backend.ollama import is_ollama_running, start_ollama, init_ollama
+from backend.chat_history import save_chat_history, load_chat_history, chat_history
 import uvicorn
 import os
 import signal
 import logging
 import json
 
-OLLAMA_SERVER_URL = "http://localhost:11434"
-
-def is_ollama_running():
-    try:
-        response = requests.get(f"{OLLAMA_SERVER_URL}/api/version")
-        return response.status_code == 200
-    except:
-        return False
-
-def start_ollama():
-    try:
-        subprocess.Popen(["ollama", "serve"])
-        # Wait for Ollama to start
-        for _ in range(5):  # Try for 5 seconds
-            if is_ollama_running():
-                return True
-            time.sleep(1)
-        return False
-    except Exception as e:
-        print("Error starting Ollama:", e)
-        return False
-
-def init_ollama():
-    if not is_ollama_running():
-        if not start_ollama():
-            os.system("ollama serve deepseek-R1 &")
-
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-
-# Define request model
-class QueryRequest(BaseModel):
-    prompt: str
 
 @app.get("/", response_class=HTMLResponse)
 async def get_chat_interface():
@@ -54,25 +22,6 @@ async def get_chat_interface():
     """
     logger.info("Serving chat interface HTML page")
     return FileResponse("index.html")
-
-# Store chat history
-chat_history = []
-
-def save_chat_history():
-    """
-    Save chat history to a file.
-    """
-    with open("chat_history.json", "w") as file:
-        json.dump(chat_history, file)
-
-def load_chat_history():
-    """
-    Load chat history from a file.
-    """
-    global chat_history
-    if os.path.exists("chat_history.json"):
-        with open("chat_history.json", "r") as file:
-            chat_history = json.load(file)
 
 @app.get("/history/")
 async def get_chat_history():
