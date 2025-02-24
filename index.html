@@ -227,7 +227,38 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        window.onload = loadChatHistory;
+        async function loadChatSummaries() {
+            const response = await fetch('/chats/index.json');
+            const data = await response.json();
+            const chatHistoryList = document.getElementById('chat-history-list');
+            chatHistoryList.innerHTML = '';
+            data.forEach(chat => {
+                const listItem = document.createElement('li');
+                listItem.textContent = chat.summary;
+                listItem.dataset.chatId = chat.id;
+                listItem.addEventListener('click', () => loadChatHistoryById(chat.id));
+                chatHistoryList.appendChild(listItem);
+            });
+        }
+
+        async function loadChatHistoryById(chatId) {
+            const response = await fetch(`/chats/${chatId}.json`);
+            const data = await response.json();
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = '';
+            data.forEach(entry => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${entry.role}`;
+                messageDiv.innerHTML = formatResponse(entry.content);
+                messagesDiv.appendChild(messageDiv);
+            });
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        window.onload = () => {
+            loadChatHistory();
+            loadChatSummaries();
+        };
     </script>
 </body>
 </html>

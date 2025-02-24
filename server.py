@@ -92,7 +92,28 @@ async def reset_chat_history():
     chat_history = []
     save_chat_history()
     logger.info("Chat history reset")
+    # Clear all chat history files
+    for file in os.listdir("chats"):
+        if file.endswith(".json") and file != "index.json":
+            os.remove(os.path.join("chats", file))
     return {"message": "Chat history reset"}
+
+@app.get("/chats/index.json", response_class=FileResponse)
+async def get_chat_index():
+    """
+    Serve the chat index file.
+    """
+    return FileResponse("chats/index.json")
+
+@app.get("/chats/{chat_id}.json", response_class=FileResponse)
+async def get_chat_history_by_id(chat_id: int):
+    """
+    Serve individual chat history files.
+    """
+    file_path = f"chats/{chat_id}.json"
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Chat history not found")
+    return FileResponse(file_path)
 
 @app.post("/query/")
 async def query_model(request: QueryRequest):
