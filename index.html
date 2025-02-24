@@ -232,11 +232,16 @@
             const data = await response.json();
             const chatHistoryList = document.getElementById('chat-history-list');
             chatHistoryList.innerHTML = '';
-            data.forEach(chat => {
+            Object.keys(data).forEach(id => {
                 const listItem = document.createElement('li');
-                listItem.textContent = chat.summary;
-                listItem.dataset.chatId = chat.id;
-                listItem.addEventListener('click', () => loadChatHistoryById(chat.id));
+                listItem.textContent = data[id];
+                listItem.dataset.chatId = id;
+                listItem.addEventListener('click', () => loadChatHistoryById(id));
+                listItem.addEventListener('dblclick', () => renameChatHistory(id));
+                listItem.addEventListener('contextmenu', (event) => {
+                    event.preventDefault();
+                    deleteChatHistory(id);
+                });
                 chatHistoryList.appendChild(listItem);
             });
         }
@@ -253,6 +258,37 @@
                 messagesDiv.appendChild(messageDiv);
             });
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        async function renameChatHistory(chatId) {
+            const newName = prompt('Enter new name for the chat:');
+            if (newName) {
+                const response = await fetch(`/chats/${chatId}/rename`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ summary: newName })
+                });
+                if (response.ok) {
+                    loadChatSummaries();
+                } else {
+                    alert('Failed to rename chat history');
+                }
+            }
+        }
+
+        async function deleteChatHistory(chatId) {
+            if (confirm('Are you sure you want to delete this chat history?')) {
+                const response = await fetch(`/chats/${chatId}/delete`, {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    loadChatSummaries();
+                } else {
+                    alert('Failed to delete chat history');
+                }
+            }
         }
 
         window.onload = () => {

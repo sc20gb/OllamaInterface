@@ -47,6 +47,9 @@ app = FastAPI()
 class QueryRequest(BaseModel):
     prompt: str
 
+class RenameRequest(BaseModel):
+    summary: str
+
 @app.get("/", response_class=HTMLResponse)
 async def get_chat_interface():
     """
@@ -73,6 +76,22 @@ def load_chat_history():
     if os.path.exists("chat_history.json"):
         with open("chat_history.json", "r") as file:
             chat_history = json.load(file)
+
+def save_chat_index(index):
+    """
+    Save chat index to a file.
+    """
+    with open("chats/index.json", "w") as file:
+        json.dump(index, file)
+
+def load_chat_index():
+    """
+    Load chat index from a file.
+    """
+    if os.path.exists("chats/index.json"):
+        with open("chats/index.json", "r") as file:
+            return json.load(file)
+    return {}
 
 @app.get("/history/")
 async def get_chat_history():
@@ -114,6 +133,33 @@ async def get_chat_history_by_id(chat_id: int):
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Chat history not found")
     return FileResponse(file_path)
+
+@app.post("/chats/{chat_id}/rename")
+async def rename_chat_history(chat_id: int, request: RenameRequest):
+    """
+    Rename a chat history.
+    """
+    index = load_chat_index()
+    if str(chat_id) not in index:
+        raise HTTPException(status_code=404, detail="Chat history not found")
+    index[str(chat_id)] = request.summary
+    save_chat_index(index)
+    return {"message": "Chat history renamed"}
+
+@app.delete("/chats/{chat_id}/delete")
+async def delete_chat_history(chat_id: int):
+    """
+    Delete a chat history.
+    """
+    index = load_chat_index()
+    if str(chat_id) not in index:
+        raise HTTPException(status_code=404, detail="Chat history not found")
+    del index[str(chat_id)]
+    save_chat_index(index)
+    file_path = f"chats/{chat_id}.json"
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    return {"message": "Chat history deleted"}
 
 @app.post("/query/")
 async def query_model(request: QueryRequest):
