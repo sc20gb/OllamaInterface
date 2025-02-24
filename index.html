@@ -186,11 +186,20 @@
                 },
                 body: JSON.stringify({ prompt: prompt })
             });
-            const data = await response.json();
-            responseDiv.innerHTML = formatResponse(data.response);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
-            // Render MathJax
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let result = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                result += decoder.decode(value, { stream: true });
+                responseDiv.innerHTML = formatResponse(result);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                MathJax.typesetPromise([responseDiv]).catch((err) => console.log(err));
+            }
+            responseDiv.innerHTML = formatResponse(result);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
             MathJax.typesetPromise([responseDiv]).catch((err) => console.log(err));
 
             document.getElementById('prompt').value = '';

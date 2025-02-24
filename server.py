@@ -113,24 +113,24 @@ async def query_model(request: QueryRequest):
             "prompt": full_prompt
         }, stream=True)
         
-        full_response = ""
-        for line in response.iter_lines():
-            if line:
-                part = line.decode('utf-8')
-                logger.info(f"Response part: {part}")
-                part_json = json.loads(part)
-                full_response += part_json["response"]
-                if part_json.get("done", False):
-                    break
-        
-        # Add the model's response to the chat history
-        chat_history.append({"role": "ollama", "content": full_response})
-        
-        # Save chat history to file
-        save_chat_history()
-        
-        logger.info(f"Full response from Ollama: {full_response}")
-        return {"response": full_response}
+        def response_generator():
+            full_response = ""
+            for line in response.iter_lines():
+                if line:
+                    part = line.decode('utf-8')
+                    logger.info(f"Response part: {part}")
+                    part_json = json.loads(part)
+                    full_response += part_json["response"]
+                    yield part_json["response"]
+                    if part_json.get("done", False):
+                        break
+            # Add the model's response to the chat history
+            chat_history.append({"role": "ollama", "content": full_response})
+            # Save chat history to file
+            save_chat_history()
+            logger.info(f"Full response from Ollama: {full_response}")
+
+        return StreamingResponse(response_generator(), media_type="text/plain")
     except Exception as e:
         logger.error(f"Exception occurred: {e}")
         raise HTTPException(status_code=500, detail=str(e))
